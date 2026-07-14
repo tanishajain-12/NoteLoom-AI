@@ -2,14 +2,15 @@ const express = require('express')
 const dotenv = require('dotenv')
 const cors = require('cors')
 const cookieParser = require('cookie-parser')
+// Load environment variables immediately so other modules see them
+dotenv.config()
 
 const connectDB = require('./config/db')
 const authRoutes = require('./routes/authRoutes')
 const userRoutes = require('./routes/userRoutes')
+const noteRoutes = require('./routes/noteRoutes')
 const { notFound, errorHandler } = require('./middleware/errorMiddleware')
 
-// Load environment variables before anything else
-dotenv.config()
 
 // Connect to MongoDB Atlas
 connectDB()
@@ -57,6 +58,9 @@ app.get('/', (req, res) => {
 
 app.use('/api/auth', authRoutes)
 app.use('/api/users', userRoutes)
+// AI summarisation + history — mounted at /api so the router exposes
+// POST /api/summarize, GET /api/history, GET /api/history/:id
+app.use('/api', noteRoutes)
 
 // ---------------------------------------------------------------------------
 // Error Handling (must come after routes)

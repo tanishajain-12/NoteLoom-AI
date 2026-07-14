@@ -77,14 +77,18 @@ const getProfile = asyncHandler(async (req, res) => {
 })
 
 // ---------------------------------------------------------------------------
-// @desc    Log out — clear the HttpOnly token cookie
+// @desc    Log out — clears the HttpOnly token cookie
 // @route   POST /api/auth/logout
-// @access  Private
+// @access  Public — intentionally no protect middleware so a client with an
+//          expired token can still clear their cookie cleanly.
 // ---------------------------------------------------------------------------
 const logout = asyncHandler(async (req, res) => {
+  // Overwrite the cookie with an empty value that expires immediately
   res.cookie('token', '', {
     httpOnly: true,
-    expires: new Date(0), // expire immediately
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    expires: new Date(0), // Jan 1 1970 — forces immediate expiry
   })
 
   res.status(200).json({ message: 'Logged out successfully' })
