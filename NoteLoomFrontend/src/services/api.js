@@ -1,9 +1,10 @@
 import axios from 'axios'
 
-// All requests go to the Express server running on port 5000.
-// Vite's dev server proxies are not used — the full base URL is explicit
-// so it works whether Vite is running or not.
-const BASE_URL = 'http://localhost:5000/api'
+// Base URL is read from the VITE_API_URL environment variable so the same
+// build can be pointed at any backend (local dev, staging, production) without
+// changing source code.  Set VITE_API_URL in your .env file (see .env.example).
+const API_URL = import.meta.env.VITE_API_URL
+const BASE_URL = `${API_URL}/api`
 
 const api = axios.create({
   baseURL: BASE_URL,
@@ -23,10 +24,23 @@ export const summarizeTranscript = (transcript) =>
 // ---------------------------------------------------------------------------
 // Fetch all past summaries (transcript field omitted by the server)
 // GET /api/history
-// Returns an array sorted newest-first
+// Returns an array sorted newest-first.
+//
+// Normalises the response so callers always receive a plain array regardless
+// of whether the backend returns:
+//   - a bare array:              [{ ... }, ...]          ← ideal
+//   - an envelope with "data":   { data: [...] }
+//   - an envelope with "notes":  { notes: [...] }
+//   - anything else unexpected:  []                      ← safe fallback
 // ---------------------------------------------------------------------------
 export const getHistory = () =>
-  api.get('/history').then((res) => res.data)
+  api.get('/history').then((res) => {
+    const payload = res.data
+    if (Array.isArray(payload)) return payload
+    if (Array.isArray(payload?.data)) return payload.data
+    if (Array.isArray(payload?.notes)) return payload.notes
+    return []
+  })
 
 // ---------------------------------------------------------------------------
 // Fetch one complete summary including the original transcript

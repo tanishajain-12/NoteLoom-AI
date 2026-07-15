@@ -1,16 +1,34 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai')
 
-// Initialise the Gemini client once at module load.
-// The API key is read from the environment — never hard-coded.
+// ---------------------------------------------------------------------------
+// Gemini client
+// dotenv.config() is called in server.js before this module is imported,
+// so process.env.GEMINI_API_KEY is guaranteed to be populated here.
+// ---------------------------------------------------------------------------
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
 
-// Use a supported Gemini model
-const MODEL_NAME = 'gemini-flash-latest'
+// ---------------------------------------------------------------------------
+// Model configuration
+//
+// Primary model comes from the environment so it can be changed without
+// touching code.  Falls back to 'gemini-flash-latest' if not set.
+//
+// FALLBACK_MODELS is tried in order when the primary model exhausts all
+// retries with 503 / 429 responses.  All entries are current, non-deprecated
+// Flash-class models as of July 2026.
+// ---------------------------------------------------------------------------
+const PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-flash-latest'
 
-/**
- * The exact JSON shape we demand from Gemini.
- * Keeping it here makes it easy to adjust the schema in one place.
- */
+const FALLBACK_MODELS = [
+  'gemini-flash-latest',
+].filter((m) => m !== PRIMARY_MODEL) // don't retry the model that already failed
+
+// Exponential backoff delays in ms: 2s, 4s, 8s, 16s
+const BACKOFF_MS = [2000, 4000, 8000, 16000]
+
+// ---------------------------------------------------------------------------
+// JSON schema Gemini must follow
+// ---------------------------------------------------------------------------
 const RESPONSE_SCHEMA = `{
   "summary": "<2-4 sentence paragraph>",
   "keyPoints": ["<point>", "..."],
@@ -20,11 +38,9 @@ const RESPONSE_SCHEMA = `{
   ]
 }`
 
-/**
- * Build the prompt.
- * We instruct Gemini explicitly to return ONLY raw JSON — no markdown fences,
- * no explanatory text — so the response can be passed directly to JSON.parse().
- */
+// ---------------------------------------------------------------------------
+// Prompt builder
+// ---------------------------------------------------------------------------
 const buildPrompt = (transcript) => `
 You are an expert note-taking assistant.
 Analyse the following lecture or meeting transcript and respond with ONLY valid JSON.
@@ -45,67 +61,69 @@ ${transcript}
 """
 `.trim()
 
-/**
- * summariseTranscript
- *
- * Sends the transcript to Gemini and returns a structured object.
- *
- * @param {string} transcript — raw lecture / meeting text
- * @returns {Promise<{summary, keyPoints, actionItems, quizQuestions}>}
- * @throws  Error with a descriptive message if the API call or JSON parse fails
- */
-const summariseTranscript = async (transcript) => {
-  if (!process.env.GEMINI_API_KEY) {
-    throw new Error('GEMINI_API_KEY is not set in environment variables')
-  }
-
-  const model = genAI.getGenerativeModel({ model: MODEL_NAME })
-  console.log("Using model:", MODEL_NAME);
-console.log("Using key:", process.env.GEMINI_API_KEY.substring(0, 10));
-
-  const prompt = buildPrompt(transcript)
-
-  // Retry logic for transient server errors (503) and rate limits (429).
-  // Attempts: initial try + up to 3 retries with exponential backoff
-  const maxRetries = 3
-  const backoffs = [1000, 2000, 4000] // ms
-
-  let rawText
+// ---------------------------------------------------------------------------
+// callModel
+//
+// Attempts to call a single Gemini model with exponential backoff.
+// Returns the raw text on success.
+// Throws the last error when all retries are exhausted.
+//
+// @param {string} modelName  — the Gemini model string to call
+// @param {string} prompt     — the fully built prompt
+// @returns {Promise<string>} — raw text from Gemini
+// ---------------------------------------------------------------------------
+const callModel = async (modelName, prompt) => {
+  const model = genAI.getGenerativeModel({ model: modelName })
   let lastError
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+
+  for (let attempt = 0; attempt <= BACKOFF_MS.length; attempt++) {
+    console.log(
+      `[geminiService] model="${modelName}" attempt=${attempt + 1}/${BACKOFF_MS.length + 1}`
+    )
+
     try {
       const result = await model.generateContent(prompt)
-      rawText = result.response.text()
-      lastError = null
-      break
-    } catch (apiError) {
-      lastError = apiError
-      const status = apiError && apiError.status
+      const text = result.response.text()
+      console.log(`[geminiService] model="${modelName}" succeeded on attempt ${attempt + 1}`)
+      return text
+    } catch (err) {
+      lastError = err
+      const status = err?.status ?? err?.httpStatus ?? null
 
-      // Only retry for temporary server errors (503) or rate limit backoff (429)
-      if ((status === 503 || status === 429) && attempt < maxRetries) {
-        const wait = backoffs[attempt] ?? 1000
+      console.warn(
+        `[geminiService] model="${modelName}" attempt=${attempt + 1} failed — ` +
+        `HTTP ${status ?? 'unknown'}: ${err.message}`
+      )
+
+      // Only retry on transient overload errors
+      const isRetriable = status === 503 || status === 429
+      if (isRetriable && attempt < BACKOFF_MS.length) {
+        const wait = BACKOFF_MS[attempt]
         console.warn(
-          `Gemini temporary error (status ${status}). retry ${attempt + 1}/${maxRetries} after ${wait}ms.`
+          `[geminiService] retrying model="${modelName}" in ${wait}ms ` +
+          `(retry ${attempt + 1}/${BACKOFF_MS.length})...`
         )
-        await new Promise((res) => setTimeout(res, wait))
+        await new Promise((resolve) => setTimeout(resolve, wait))
         continue
       }
 
-      // Non-retriable or out of retries — log and surface the error
-      console.log('FULL GEMINI ERROR:')
-      console.dir(apiError, { depth: null })
-      throw new Error(`Gemini API error: ${apiError.message}`)
+      // Non-retriable error or retries exhausted — stop for this model
+      break
     }
   }
 
-  if (!rawText && lastError) {
-    console.log('FULL GEMINI ERROR:')
-    console.dir(lastError, { depth: null })
-    throw new Error(`Gemini API error: ${lastError.message}`)
-  }
-  // Strip any accidental markdown fences Gemini might still add
-  // e.g. ```json ... ``` or ``` ... ```
+  throw lastError
+}
+
+// ---------------------------------------------------------------------------
+// parseAndValidate
+//
+// Strips any stray markdown fences, parses JSON, and validates required keys.
+//
+// @param {string} rawText
+// @returns {{ summary, keyPoints, actionItems, quizQuestions }}
+// ---------------------------------------------------------------------------
+const parseAndValidate = (rawText) => {
   const cleaned = rawText
     .trim()
     .replace(/^```(?:json)?\s*/i, '')
@@ -116,15 +134,13 @@ console.log("Using key:", process.env.GEMINI_API_KEY.substring(0, 10));
   try {
     parsed = JSON.parse(cleaned)
   } catch {
-    // Log the raw response to help debug prompt/model issues
-    console.error('Gemini raw response (unparseable):\n', rawText)
+    console.error('[geminiService] Unparseable Gemini response:\n', rawText)
     throw new Error(
       'Gemini returned a response that could not be parsed as JSON. ' +
       'Check server logs for the raw response.'
     )
   }
 
-  // Validate that all expected keys are present
   const required = ['summary', 'keyPoints', 'actionItems', 'quizQuestions']
   for (const key of required) {
     if (!(key in parsed)) {
@@ -138,6 +154,63 @@ console.log("Using key:", process.env.GEMINI_API_KEY.substring(0, 10));
     actionItems:   parsed.actionItems   ?? [],
     quizQuestions: parsed.quizQuestions ?? [],
   }
+}
+
+// ---------------------------------------------------------------------------
+// summariseTranscript  (public API)
+//
+// Tries the primary model with full exponential backoff (2s → 4s → 8s → 16s).
+// If the primary model fails entirely on 503/429, walks through FALLBACK_MODELS
+// in order, each with the same backoff sequence.
+// Throws only when every model in the chain has been exhausted.
+//
+// @param {string} transcript — raw lecture / meeting text
+// @returns {Promise<{summary, keyPoints, actionItems, quizQuestions}>}
+// ---------------------------------------------------------------------------
+const summariseTranscript = async (transcript) => {
+  if (!process.env.GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY is not set in environment variables')
+  }
+
+  const prompt = buildPrompt(transcript)
+  const modelsToTry = [PRIMARY_MODEL, ...FALLBACK_MODELS]
+
+  console.log(`[geminiService] Starting summarisation — primary model: "${PRIMARY_MODEL}"`)
+  if (FALLBACK_MODELS.length) {
+    console.log(`[geminiService] Fallback chain: ${FALLBACK_MODELS.join(' → ')}`)
+  }
+
+  let lastError
+  for (const modelName of modelsToTry) {
+    try {
+      console.log(`[geminiService] Trying model: "${modelName}"`)
+      const rawText = await callModel(modelName, prompt)
+      const result = parseAndValidate(rawText)
+      console.log(`[geminiService] ✓ Final model selected: "${modelName}"`)
+      return result
+    } catch (err) {
+      lastError = err
+      const status = err?.status ?? err?.httpStatus ?? null
+      console.error(
+        `[geminiService] Model "${modelName}" exhausted — ` +
+        `HTTP ${status ?? 'unknown'}: ${err.message}`
+      )
+
+      // Only fall through to the next model for overload errors
+      const isOverload = status === 503 || status === 429
+      if (!isOverload) {
+        console.error('[geminiService] Non-retriable error — stopping fallback chain')
+        throw new Error(`Gemini API error (${modelName}): ${err.message}`)
+      }
+
+      console.warn(`[geminiService] Falling back to next model in chain...`)
+    }
+  }
+
+  // Every model in the chain failed
+  throw new Error(
+    `All Gemini models exhausted after retries. Last error: ${lastError?.message}`
+  )
 }
 
 module.exports = { summariseTranscript }

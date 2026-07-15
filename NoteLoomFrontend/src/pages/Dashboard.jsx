@@ -26,7 +26,11 @@ function Dashboard() {
   // Load the 3 most recent summaries for the "Recent Notes" section
   useEffect(() => {
     getHistory()
-      .then((data) => setRecentNotes(data.slice(0, 3)))
+      .then((data) => {
+        // Guard: ensure we always store an array even if the service layer
+        // returns something unexpected (e.g. null, an object, or undefined).
+        setRecentNotes(Array.isArray(data) ? data.slice(0, 3) : [])
+      })
       .catch(() => {
         // Silently ignore — recent notes are non-critical
       })
