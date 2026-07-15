@@ -53,7 +53,7 @@ app.use(cookieParser())
 // Routes
 // ---------------------------------------------------------------------------
 app.get('/', (req, res) => {
-  res.json({ message: 'NoteSumm API is running' })
+  res.json({ message: 'NoteLoom API is running 🚀' })
 })
 
 app.use('/api/auth', authRoutes)
