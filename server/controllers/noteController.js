@@ -23,7 +23,42 @@ const summarize = asyncHandler(async (req, res) => {
     throw new Error('transcript must be at most 50 000 characters')
   }
 
-  const aiResult = await summariseTranscript(transcript.trim())
+let aiResult
+
+try {
+  aiResult = await summariseTranscript(transcript.trim())
+} catch (error) {
+  console.error('Gemini Error:', error.message)
+
+  const message = error.message || ''
+
+  // Friendly message for quota exceeded
+  if (
+    message.includes('429') ||
+    message.toLowerCase().includes('quota exceeded')
+  ) {
+    res.status(429)
+    throw new Error(
+      'The AI service has reached its daily request limit. Please try again later.'
+    )
+  }
+
+  // Friendly message for temporary overload
+  if (message.includes('503')) {
+    res.status(503)
+    throw new Error(
+      'The AI service is currently busy. Please try again in a few moments.'
+    )
+  }
+
+  // Generic fallback
+  res.status(500)
+  throw new Error(
+    'Unable to generate the summary right now. Please try again later.'
+  )
+}
+
+
 
   // Associate the note with the authenticated user
   const note = await Note.create({
