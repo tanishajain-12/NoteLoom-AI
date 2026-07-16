@@ -2,19 +2,101 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Button from '../components/Button'
 import { User, Mail, Lock, Eye, EyeOff, Google, ArrowRight, Check } from '../icons'
+import { registerUser } from '../services/api'
+
+const EMAIL_REGEX = /^\S+@\S+\.\S+$/
 
 function SignUp() {
   const navigate = useNavigate()
   const [showPassword, setShowPassword] = useState(false)
 
-  const handleSubmit = (e) => {
-    e.preventDefault()
-    navigate('/dashboard')
+  // Form state
+  const [name,          setName]          = useState('')
+  const [email,         setEmail]         = useState('')
+  const [password,      setPassword]      = useState('')
+  const [acceptedTerms, setAcceptedTerms] = useState(false)
+
+  // UI state
+  const [loading,  setLoading]  = useState(false)
+  const [errors,   setErrors]   = useState({})
+  const [apiError, setApiError] = useState('')
+
+  // -------------------------------------------------------------------------
+  // Frontend validation
+  // -------------------------------------------------------------------------
+  const validate = () => {
+    const next = {}
+
+    if (!name.trim()) {
+      next.name = 'Name is required'
+    } else if (name.trim().length < 2) {
+      next.name = 'Name must be at least 2 characters'
+    }
+
+    if (!email.trim()) {
+      next.email = 'Email is required'
+    } else if (!EMAIL_REGEX.test(email.trim())) {
+      next.email = 'Please enter a valid email'
+    }
+
+    if (!password) {
+      next.password = 'Password is required'
+    } else if (password.length < 8) {
+      next.password = 'Password must be at least 8 characters'
+    }
+
+    if (!acceptedTerms) {
+      next.terms = 'You must agree to the Terms & Privacy Policy to continue.'
+    }
+
+    setErrors(next)
+    return Object.keys(next).length === 0
   }
+
+  // -------------------------------------------------------------------------
+  // Submit handler
+  // -------------------------------------------------------------------------
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setApiError('')
+
+    if (!validate()) return
+
+    setLoading(true)
+    try {
+      // acceptedTerms is sent to the backend so it can enforce the rule
+      // independently of the frontend check.
+      const data = await registerUser(name.trim(), email.trim(), password, acceptedTerms)
+
+      localStorage.setItem('user',      JSON.stringify({ _id: data._id, name: data.name, email: data.email }))
+      localStorage.setItem('authToken', data.token)
+
+      navigate('/dashboard')
+    } catch (err) {
+      const message =
+        err.response?.data?.message ||
+        'Something went wrong. Please try again.'
+      setApiError(message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Input class helper
+  // -------------------------------------------------------------------------
+  const inputClass = (field) =>
+    `w-full rounded-xl border bg-white pl-10 pr-4 py-2.5 text-sm text-[#1b1c1c] placeholder:text-[#857372]/60 focus:outline-none focus:ring-2 transition-all ${
+      errors[field]
+        ? 'border-[#93000a] focus:ring-[#93000a]/20 focus:border-[#93000a]'
+        : 'border-[#d7c2c1] focus:ring-[#8a4d4e]/30 focus:border-[#8a4d4e]'
+    }`
 
   return (
     <div className="min-h-screen flex">
-      {/* Left panel - form */}
+      {/* ------------------------------------------------------------------ */}
+      {/* Left panel - form                                                   */}
+      {/* ------------------------------------------------------------------ */}
       <div className="flex-1 flex items-center justify-center px-4 sm:px-6 py-12 bg-[#fbf9f8] order-2 lg:order-1">
         <div className="w-full max-w-md">
           <div className="lg:hidden mb-8">
@@ -34,9 +116,11 @@ function SignUp() {
             </Link>
           </p>
 
+          {/* Google — disabled until OAuth is implemented */}
           <button
-            onClick={() => navigate('/dashboard')}
-            className="mt-8 w-full inline-flex items-center justify-center gap-2 rounded-full border border-[#d7c2c1] bg-white px-5 py-2.5 text-sm font-medium text-[#1b1c1c] hover:bg-[#f0eded] transition-colors"
+            type="button"
+            disabled
+            className="mt-8 w-full inline-flex items-center justify-center gap-2 rounded-full border border-[#d7c2c1] bg-white px-5 py-2.5 text-sm font-medium text-[#1b1c1c] opacity-50 cursor-not-allowed"
           >
             <Google className="w-5 h-5" />
             Sign up with Google
@@ -48,7 +132,15 @@ function SignUp() {
             <div className="h-px flex-1 bg-[#e4e2e1]"></div>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          {/* API-level error */}
+          {apiError && (
+            <div className="mb-4 rounded-xl border border-[#ffdad6] bg-[#fff5f5] px-4 py-3 text-sm text-[#93000a]">
+              {apiError}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+            {/* Full Name */}
             <div>
               <label className="block text-sm font-medium text-[#524343] mb-1.5">Full Name</label>
               <div className="relative">
@@ -56,11 +148,16 @@ function SignUp() {
                 <input
                   type="text"
                   placeholder="Jane Doe"
-                  className="w-full rounded-xl border border-[#d7c2c1] bg-white pl-10 pr-4 py-2.5 text-sm text-[#1b1c1c] placeholder:text-[#857372]/60 focus:outline-none focus:ring-2 focus:ring-[#8a4d4e]/30 focus:border-[#8a4d4e] transition-all"
+                  value={name}
+                  onChange={(e) => { setName(e.target.value); setErrors((p) => ({ ...p, name: '' })) }}
+                  className={inputClass('name')}
+                  autoComplete="name"
                 />
               </div>
+              {errors.name && <p className="mt-1.5 text-xs text-[#93000a]">{errors.name}</p>}
             </div>
 
+            {/* Email */}
             <div>
               <label className="block text-sm font-medium text-[#524343] mb-1.5">Email</label>
               <div className="relative">
@@ -68,11 +165,16 @@ function SignUp() {
                 <input
                   type="email"
                   placeholder="you@example.com"
-                  className="w-full rounded-xl border border-[#d7c2c1] bg-white pl-10 pr-4 py-2.5 text-sm text-[#1b1c1c] placeholder:text-[#857372]/60 focus:outline-none focus:ring-2 focus:ring-[#8a4d4e]/30 focus:border-[#8a4d4e] transition-all"
+                  value={email}
+                  onChange={(e) => { setEmail(e.target.value); setErrors((p) => ({ ...p, email: '' })) }}
+                  className={inputClass('email')}
+                  autoComplete="email"
                 />
               </div>
+              {errors.email && <p className="mt-1.5 text-xs text-[#93000a]">{errors.email}</p>}
             </div>
 
+            {/* Password */}
             <div>
               <label className="block text-sm font-medium text-[#524343] mb-1.5">Password</label>
               <div className="relative">
@@ -80,7 +182,14 @@ function SignUp() {
                 <input
                   type={showPassword ? 'text' : 'password'}
                   placeholder="At least 8 characters"
-                  className="w-full rounded-xl border border-[#d7c2c1] bg-white pl-10 pr-10 py-2.5 text-sm text-[#1b1c1c] placeholder:text-[#857372]/60 focus:outline-none focus:ring-2 focus:ring-[#8a4d4e]/30 focus:border-[#8a4d4e] transition-all"
+                  value={password}
+                  onChange={(e) => { setPassword(e.target.value); setErrors((p) => ({ ...p, password: '' })) }}
+                  className={`w-full rounded-xl border bg-white pl-10 pr-10 py-2.5 text-sm text-[#1b1c1c] placeholder:text-[#857372]/60 focus:outline-none focus:ring-2 transition-all ${
+                    errors.password
+                      ? 'border-[#93000a] focus:ring-[#93000a]/20 focus:border-[#93000a]'
+                      : 'border-[#d7c2c1] focus:ring-[#8a4d4e]/30 focus:border-[#8a4d4e]'
+                  }`}
+                  autoComplete="new-password"
                 />
                 <button
                   type="button"
@@ -90,25 +199,68 @@ function SignUp() {
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
-              <div className="mt-2 flex items-center gap-1.5">
-                <div className="h-1 flex-1 rounded-full bg-[#8a4d4e]"></div>
-                <div className="h-1 flex-1 rounded-full bg-[#d48c8c]"></div>
-                <div className="h-1 flex-1 rounded-full bg-[#e4e2e1]"></div>
-              </div>
+              {errors.password ? (
+                <p className="mt-1.5 text-xs text-[#93000a]">{errors.password}</p>
+              ) : (
+                <div className="mt-2 flex items-center gap-1.5">
+                  <div className={`h-1 flex-1 rounded-full ${password.length >= 3 ? 'bg-[#8a4d4e]' : 'bg-[#e4e2e1]'}`}></div>
+                  <div className={`h-1 flex-1 rounded-full ${password.length >= 6 ? 'bg-[#d48c8c]' : 'bg-[#e4e2e1]'}`}></div>
+                  <div className={`h-1 flex-1 rounded-full ${password.length >= 8 ? 'bg-[#8a4d4e]' : 'bg-[#e4e2e1]'}`}></div>
+                </div>
+              )}
             </div>
 
-            <label className="flex items-start gap-2 text-sm text-[#524343]">
-              <input type="checkbox" className="mt-0.5 rounded border-[#d7c2c1] text-[#8a4d4e] focus:ring-[#8a4d4e]/30" />
-              <span>
-                I agree to the{' '}
-                <Link to="/" className="text-[#8a4d4e] underline">Terms</Link> and{' '}
-                <Link to="/" className="text-[#8a4d4e] underline">Privacy Policy</Link>
-              </span>
-            </label>
+            {/* Terms & Privacy — mandatory checkbox */}
+            <div>
+              <label className="flex items-start gap-2 text-sm text-[#524343] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={acceptedTerms}
+                  onChange={(e) => {
+                    setAcceptedTerms(e.target.checked)
+                    setErrors((p) => ({ ...p, terms: '' }))
+                  }}
+                  className={`mt-0.5 rounded focus:ring-[#8a4d4e]/30 ${
+                    errors.terms
+                      ? 'border-[#93000a] text-[#93000a]'
+                      : 'border-[#d7c2c1] text-[#8a4d4e]'
+                  }`}
+                />
+                <span>
+                  I agree to the{' '}
+                  <Link
+                    to="/terms"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[#8a4d4e] underline"
+                  >
+                    Terms
+                  </Link>{' '}
+                  and{' '}
+                  <Link
+                    to="/privacy"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[#8a4d4e] underline"
+                  >
+                    Privacy Policy
+                  </Link>
+                </span>
+              </label>
+              {errors.terms && (
+                <p className="mt-1.5 text-xs text-[#93000a]">{errors.terms}</p>
+              )}
+            </div>
 
-            <Button variant="primary" size="lg" className="w-full" type="submit">
-              Create account
+            <Button
+              variant="primary"
+              size="lg"
+              className="w-full"
+              type="submit"
+              disabled={loading}
+            >
               <ArrowRight className="w-4 h-4" />
+              {loading ? 'Creating account…' : 'Create account'}
             </Button>
           </form>
 
@@ -118,7 +270,9 @@ function SignUp() {
         </div>
       </div>
 
-      {/* Right panel */}
+      {/* ------------------------------------------------------------------ */}
+      {/* Right panel — unchanged                                             */}
+      {/* ------------------------------------------------------------------ */}
       <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-[#6e3637] to-[#8a4d4e] relative overflow-hidden order-1 lg:order-2">
         <div className="absolute inset-0 opacity-20">
           <div className="absolute top-20 right-20 h-64 w-64 rounded-full bg-[#ffdad9] blur-3xl"></div>

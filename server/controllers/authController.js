@@ -83,11 +83,15 @@ const getProfile = asyncHandler(async (req, res) => {
 //          expired token can still clear their cookie cleanly.
 // ---------------------------------------------------------------------------
 const logout = asyncHandler(async (req, res) => {
-  // Overwrite the cookie with an empty value that expires immediately
+  const isProduction = process.env.NODE_ENV === 'production'
+
+  // Overwrite the cookie with an empty value that expires immediately.
+  // sameSite must match the setting used when the cookie was set so the
+  // browser actually clears it (especially important cross-origin in prod).
   res.cookie('token', '', {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
+    secure: isProduction,
+    sameSite: isProduction ? 'none' : 'lax',
     expires: new Date(0), // Jan 1 1970 — forces immediate expiry
   })
 

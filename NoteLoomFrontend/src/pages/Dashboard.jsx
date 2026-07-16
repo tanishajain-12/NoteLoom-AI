@@ -4,38 +4,84 @@ import AppLayout from '../components/AppLayout'
 import Button from '../components/Button'
 import Textarea from '../components/Textarea'
 import HistoryCard from '../components/HistoryCard'
-import { mockStats } from '../data/mockData'
-import { summarizeTranscript, getHistory } from '../services/api'
+import { summarizeTranscript, getHistory, getStats } from '../services/api'
+import { getStoredUser } from '../utils/auth'
 import { Sparkles, DocumentText, Clock, ChartBar, BookOpen, ArrowRight } from '../icons'
 
 const iconMap = {
   document: DocumentText,
-  clock: Clock,
-  chart: ChartBar,
-  book: BookOpen,
+  clock:    Clock,
+  chart:    ChartBar,
+  book:     BookOpen,
 }
 
 function Dashboard() {
   const navigate = useNavigate()
-  const [transcript, setTranscript] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [recentNotes, setRecentNotes] = useState([])
+  const [transcript,   setTranscript]   = useState('')
+  const [loading,      setLoading]      = useState(false)
+  const [error,        setError]        = useState('')
+  const [recentNotes,  setRecentNotes]  = useState([])
+  const [stats,        setStats]        = useState(null)   // null = loading
   const maxLength = 10000
 
-  // Load the 3 most recent summaries for the "Recent Notes" section
+  // Derive first name from localStorage for the welcome message
+  const storedUser  = getStoredUser()
+  const firstName   = storedUser?.name?.split(' ')[0] ?? ''
+
+  // -------------------------------------------------------------------------
+  // Load recent notes + stats in parallel on mount
+  // -------------------------------------------------------------------------
   useEffect(() => {
+    // Recent notes
     getHistory()
-      .then((data) => {
-        // Guard: ensure we always store an array even if the service layer
-        // returns something unexpected (e.g. null, an object, or undefined).
-        setRecentNotes(Array.isArray(data) ? data.slice(0, 3) : [])
-      })
+      .then((data) => setRecentNotes(Array.isArray(data) ? data.slice(0, 3) : []))
+      .catch(() => {/* non-critical — silently ignore */})
+
+    // Dashboard stats
+    getStats()
+      .then((data) => setStats(data))
       .catch(() => {
-        // Silently ignore — recent notes are non-critical
+        // If stats fail (e.g. first run with no notes), show zeros gracefully
+        setStats({ totalNotes: 0, hoursSaved: '0.0h', quizzesTaken: 0, avgAccuracy: '—' })
       })
   }, [])
 
+  // -------------------------------------------------------------------------
+  // Build the 4 stat cards from real API data.
+  // While loading (stats === null) we show skeleton placeholders.
+  // -------------------------------------------------------------------------
+  const statCards = stats
+    ? [
+        {
+          label:  'Total Notes',
+          value:  String(stats.totalNotes),
+          icon:   'document',
+          change: 'Summaries created',
+        },
+        {
+          label:  'Hours Saved',
+          value:  stats.hoursSaved,
+          icon:   'clock',
+          change: '~30 min saved per note',
+        },
+        {
+          label:  'Quizzes Taken',
+          value:  String(stats.quizzesTaken),
+          icon:   'book',
+          change: 'Quiz questions generated',
+        },
+        {
+          label:  'Avg. Accuracy',
+          value:  stats.avgAccuracy,
+          icon:   'chart',
+          change: 'Estimated value',
+        },
+      ]
+    : null   // null triggers skeleton rendering
+
+  // -------------------------------------------------------------------------
+  // Generate summary
+  // -------------------------------------------------------------------------
   const handleGenerate = async (e) => {
     e.preventDefault()
     if (!transcript.trim()) return
@@ -45,7 +91,6 @@ function Dashboard() {
 
     try {
       const result = await summarizeTranscript(transcript.trim())
-      // Pass the full API response to the Results page via navigation state
       navigate('/results', { state: { summary: result } })
     } catch (err) {
       const message =
@@ -62,33 +107,45 @@ function Dashboard() {
       {/* Welcome */}
       <div className="mb-8">
         <h2 className="font-display text-2xl sm:text-3xl font-extrabold text-[#1b1c1c]">
-          Welcome back!
+          Welcome back{firstName ? `, ${firstName}` : ''}!
         </h2>
         <p className="mt-1.5 text-sm text-[#524343]">
           Paste a transcript below to generate a summary, key points, action items, and quiz questions.
         </p>
       </div>
 
-      {/* Quick Stats — kept as static UI; no stats endpoint exists */}
+      {/* Stats cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        {mockStats.map((stat) => {
-          const Icon = iconMap[stat.icon]
-          return (
-            <div
-              key={stat.label}
-              className="rounded-2xl bg-white border border-[#e4e2e1] shadow-sm p-5"
-            >
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#ffdad9]">
-                  <Icon className="w-5 h-5 text-[#8a4d4e]" />
+        {statCards
+          ? statCards.map((stat) => {
+              const Icon = iconMap[stat.icon]
+              return (
+                <div
+                  key={stat.label}
+                  className="rounded-2xl bg-white border border-[#e4e2e1] shadow-sm p-5"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#ffdad9]">
+                      <Icon className="w-5 h-5 text-[#8a4d4e]" />
+                    </div>
+                  </div>
+                  <p className="font-display text-2xl font-extrabold text-[#1b1c1c]">{stat.value}</p>
+                  <p className="text-xs text-[#524343] mt-0.5">{stat.label}</p>
+                  <p className="text-xs text-[#8a4d4e] mt-1.5 font-medium">{stat.change}</p>
                 </div>
+              )
+            })
+          : /* Loading skeleton — same 4-card grid */
+            [0, 1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className="rounded-2xl bg-white border border-[#e4e2e1] shadow-sm p-5 animate-pulse"
+              >
+                <div className="h-10 w-10 rounded-xl bg-[#f0eded] mb-3"></div>
+                <div className="h-7 w-12 bg-[#f0eded] rounded mb-1"></div>
+                <div className="h-3 w-20 bg-[#f0eded] rounded"></div>
               </div>
-              <p className="font-display text-2xl font-extrabold text-[#1b1c1c]">{stat.value}</p>
-              <p className="text-xs text-[#524343] mt-0.5">{stat.label}</p>
-              <p className="text-xs text-[#8a4d4e] mt-1.5 font-medium">{stat.change}</p>
-            </div>
-          )
-        })}
+            ))}
       </div>
 
       {/* Transcript Input */}
@@ -103,7 +160,6 @@ function Dashboard() {
           </div>
         </div>
 
-        {/* Error banner */}
         {error && (
           <div className="mb-4 rounded-xl border border-[#ffdad6] bg-[#fff5f5] px-4 py-3 text-sm text-[#93000a]">
             {error}
@@ -136,7 +192,7 @@ function Dashboard() {
         </form>
       </div>
 
-      {/* Recent Notes — live from GET /api/history */}
+      {/* Recent Notes */}
       <div>
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-display text-xl font-bold text-[#1b1c1c]">Recent Notes</h3>

@@ -1,16 +1,22 @@
 import { useNavigate } from 'react-router-dom'
+import { logoutUser } from '../services/api'
+import { clearAuthStorage } from '../utils/auth'
 
 export function useLogout() {
   const navigate = useNavigate()
 
-  return () => {
+  return async () => {
     try {
-      localStorage.removeItem('mockAuth')
-      localStorage.removeItem('user')
-      sessionStorage.clear()
+      // Tell the backend to clear the HttpOnly cookie
+      await logoutUser()
     } catch {
-      // storage may be unavailable; safe to ignore
+      // If the request fails (expired token, network error) still clear
+      // client-side storage so the user isn't stuck on the dashboard.
     }
+
+    // Always clear client-side auth state via the shared helper
+    clearAuthStorage()
+
     navigate('/')
   }
 }

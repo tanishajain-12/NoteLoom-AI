@@ -1,16 +1,93 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
 import Button from '../components/Button'
 import { Mail, Lock, Eye, EyeOff, Google, ArrowRight } from '../icons'
+import { loginUser } from '../services/api'
+
+// ---------------------------------------------------------------------------
+// Email format regex — same pattern used by the backend validateMiddleware
+// ---------------------------------------------------------------------------
+const EMAIL_REGEX = /^\S+@\S+\.\S+$/
 
 function Login() {
-  const navigate = useNavigate()
+  const navigate  = useNavigate()
+  const location  = useLocation()
+  // If the user was redirected here from a protected page, go back there after login
+  const from = location.state?.from?.pathname || '/dashboard'
   const [showPassword, setShowPassword] = useState(false)
 
-  const handleSubmit = (e) => {
-    e.preventDefault()
-    navigate('/dashboard')
+  // Form state
+  const [email,    setEmail]    = useState('')
+  const [password, setPassword] = useState('')
+
+  // UI state
+  const [loading,  setLoading]  = useState(false)
+  const [errors,   setErrors]   = useState({})   // field-level validation messages
+  const [apiError, setApiError] = useState('')    // server-returned error message
+
+  // -------------------------------------------------------------------------
+  // Frontend validation — runs before the network request
+  // -------------------------------------------------------------------------
+  const validate = () => {
+    const next = {}
+
+    if (!email.trim()) {
+      next.email = 'Email is required'
+    } else if (!EMAIL_REGEX.test(email.trim())) {
+      next.email = 'Please enter a valid email'
+    }
+
+    if (!password) {
+      next.password = 'Password is required'
+    } else if (password.length < 6) {
+      // Intentionally lenient here — backend enforces 8 chars on signup;
+      // on login we only need to prevent empty/trivially-short submissions.
+      next.password = 'Password must be at least 6 characters'
+    }
+
+    setErrors(next)
+    return Object.keys(next).length === 0
   }
+
+  // -------------------------------------------------------------------------
+  // Submit handler
+  // -------------------------------------------------------------------------
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setApiError('')
+
+    if (!validate()) return   // block submit if frontend validation fails
+
+    setLoading(true)
+    try {
+      const data = await loginUser(email.trim(), password)
+
+      // Backend returns { _id, name, email, createdAt, token }
+      // Store user info and token for the session
+      localStorage.setItem('user',      JSON.stringify({ _id: data._id, name: data.name, email: data.email }))
+      localStorage.setItem('authToken', data.token)
+
+      // Go back to where they were trying to go, or /dashboard by default
+      navigate(from, { replace: true })
+    } catch (err) {
+      const message =
+        err.response?.data?.message ||
+        'Something went wrong. Please try again.'
+      setApiError(message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Shared input class builder
+  // -------------------------------------------------------------------------
+  const inputClass = (field, extra = '') =>
+    `w-full rounded-xl border bg-white pl-10 ${extra} py-2.5 text-sm text-[#1b1c1c] placeholder:text-[#857372]/60 focus:outline-none focus:ring-2 transition-all ${
+      errors[field]
+        ? 'border-[#93000a] focus:ring-[#93000a]/20 focus:border-[#93000a]'
+        : 'border-[#d7c2c1] focus:ring-[#8a4d4e]/30 focus:border-[#8a4d4e]'
+    }`
 
   return (
     <div className="min-h-screen flex">
@@ -68,9 +145,11 @@ function Login() {
             </Link>
           </p>
 
+          {/* Google button — UI only, disabled until OAuth is wired */}
           <button
-            onClick={() => navigate('/dashboard')}
-            className="mt-8 w-full inline-flex items-center justify-center gap-2 rounded-full border border-[#d7c2c1] bg-white px-5 py-2.5 text-sm font-medium text-[#1b1c1c] hover:bg-[#f0eded] transition-colors"
+            type="button"
+            disabled
+            className="mt-8 w-full inline-flex items-center justify-center gap-2 rounded-full border border-[#d7c2c1] bg-white px-5 py-2.5 text-sm font-medium text-[#1b1c1c] opacity-50 cursor-not-allowed"
           >
             <Google className="w-5 h-5" />
             Continue with Google
@@ -82,7 +161,15 @@ function Login() {
             <div className="h-px flex-1 bg-[#e4e2e1]"></div>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          {/* API-level error banner */}
+          {apiError && (
+            <div className="mb-4 rounded-xl border border-[#ffdad6] bg-[#fff5f5] px-4 py-3 text-sm text-[#93000a]">
+              {apiError}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+            {/* Email */}
             <div>
               <label className="block text-sm font-medium text-[#524343] mb-1.5">Email</label>
               <div className="relative">
@@ -90,11 +177,18 @@ function Login() {
                 <input
                   type="email"
                   placeholder="you@example.com"
-                  className="w-full rounded-xl border border-[#d7c2c1] bg-white pl-10 pr-4 py-2.5 text-sm text-[#1b1c1c] placeholder:text-[#857372]/60 focus:outline-none focus:ring-2 focus:ring-[#8a4d4e]/30 focus:border-[#8a4d4e] transition-all"
+                  value={email}
+                  onChange={(e) => { setEmail(e.target.value); setErrors((p) => ({ ...p, email: '' })) }}
+                  className={inputClass('email', 'pr-4')}
+                  autoComplete="email"
                 />
               </div>
+              {errors.email && (
+                <p className="mt-1.5 text-xs text-[#93000a]">{errors.email}</p>
+              )}
             </div>
 
+            {/* Password */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="block text-sm font-medium text-[#524343]">Password</label>
@@ -105,7 +199,10 @@ function Login() {
                 <input
                   type={showPassword ? 'text' : 'password'}
                   placeholder="••••••••"
-                  className="w-full rounded-xl border border-[#d7c2c1] bg-white pl-10 pr-10 py-2.5 text-sm text-[#1b1c1c] placeholder:text-[#857372]/60 focus:outline-none focus:ring-2 focus:ring-[#8a4d4e]/30 focus:border-[#8a4d4e] transition-all"
+                  value={password}
+                  onChange={(e) => { setPassword(e.target.value); setErrors((p) => ({ ...p, password: '' })) }}
+                  className={inputClass('password', 'pr-10')}
+                  autoComplete="current-password"
                 />
                 <button
                   type="button"
@@ -115,6 +212,9 @@ function Login() {
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
+              {errors.password && (
+                <p className="mt-1.5 text-xs text-[#93000a]">{errors.password}</p>
+              )}
             </div>
 
             <label className="flex items-center gap-2 text-sm text-[#524343]">
@@ -122,8 +222,14 @@ function Login() {
               Remember me for 30 days
             </label>
 
-            <Button variant="primary" size="lg" className="w-full" type="submit">
-              Log in
+            <Button
+              variant="primary"
+              size="lg"
+              className="w-full"
+              type="submit"
+              disabled={loading}
+            >
+              {loading ? 'Logging in…' : 'Log in'}
               <ArrowRight className="w-4 h-4" />
             </Button>
           </form>

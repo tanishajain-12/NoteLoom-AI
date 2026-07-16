@@ -7,10 +7,10 @@
 const EMAIL_REGEX = /^\S+@\S+\.\S+$/
 
 /**
- * Validate signup body: name, email, password
+ * Validate signup body: name, email, password, acceptedTerms
  */
 const validateSignup = (req, res, next) => {
-  const { name, email, password } = req.body
+  const { name, email, password, acceptedTerms } = req.body
 
   if (!name || typeof name !== 'string' || name.trim().length < 2) {
     res.status(422)
@@ -30,6 +30,13 @@ const validateSignup = (req, res, next) => {
   if (!password || password.length < 8) {
     res.status(422)
     return next(new Error('Password must be at least 8 characters'))
+  }
+
+  // Terms acceptance is enforced on the backend so it cannot be bypassed
+  // by disabling JavaScript or sending a request directly to the API.
+  if (!acceptedTerms) {
+    res.status(422)
+    return next(new Error('You must agree to the Terms & Privacy Policy to continue.'))
   }
 
   // Sanitise — trim whitespace from string fields

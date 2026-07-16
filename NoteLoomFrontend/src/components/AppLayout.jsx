@@ -3,8 +3,28 @@ import { Link } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import { Menu, Bell, Profile as ProfileIcon } from '../icons'
 
+// Derive up-to-2-letter initials from the stored user's name.
+// Falls back to '?' if localStorage is unavailable or the user is not logged in.
+function getUserInitials() {
+  try {
+    const raw = localStorage.getItem('user')
+    if (!raw) return '?'
+    const { name } = JSON.parse(raw)
+    if (!name) return '?'
+    return name
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((w) => w[0].toUpperCase())
+      .join('')
+  } catch {
+    return '?'
+  }
+}
+
 function AppLayout({ children, title }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const initials = getUserInitials()
 
   return (
     <div className="min-h-screen bg-[#fbf9f8] flex">
@@ -28,7 +48,7 @@ function AppLayout({ children, title }) {
               <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-[#8a4d4e]"></span>
             </button>
             <Link to="/profile" className="flex h-9 w-9 items-center justify-center rounded-full bg-[#8a4d4e] text-white text-sm font-bold">
-              JD
+              {initials}
             </Link>
           </div>
         </header>
