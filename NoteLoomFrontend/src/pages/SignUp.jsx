@@ -147,7 +147,7 @@ function SignUp() {
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[#857372] pointer-events-none" />
                 <input
                   type="text"
-                  placeholder="Jane Doe"
+                  placeholder="Your Name"
                   value={name}
                   onChange={(e) => { setName(e.target.value); setErrors((p) => ({ ...p, name: '' })) }}
                   className={inputClass('name')}

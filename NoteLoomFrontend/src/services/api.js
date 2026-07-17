@@ -53,6 +53,10 @@ export const getUserProfile = () =>
 export const updateUserProfile = (fields) =>
   api.put('/users/profile', fields).then((res) => res.data)
 
+// DELETE /api/users/profile — deletes the account and all associated notes
+export const deleteAccount = () =>
+  api.delete('/users/profile').then((res) => res.data)
+
 // ---------------------------------------------------------------------------
 // Notes — stats
 // ---------------------------------------------------------------------------

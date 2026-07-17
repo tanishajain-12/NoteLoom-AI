@@ -1,4 +1,5 @@
 const User = require('../models/User')
+const Note = require('../models/Note')
 const asyncHandler = require('../utils/asyncHandler')
 
 // ---------------------------------------------------------------------------
@@ -52,23 +53,33 @@ const updateProfile = asyncHandler(async (req, res) => {
 })
 
 // ---------------------------------------------------------------------------
-// @desc    Delete the current user's account
+// @desc    Delete the current user's account and all their notes
 // @route   DELETE /api/users/profile
 // @access  Private
 // ---------------------------------------------------------------------------
 const deleteAccount = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.user._id)
+  const userId = req.user._id
 
+  const user = await User.findById(userId)
   if (!user) {
     res.status(404)
     throw new Error('User not found')
   }
 
+  // Delete all notes belonging to this user before removing the account.
+  // deleteMany is atomic per document — safe to run before user deletion.
+  await Note.deleteMany({ user: userId })
+
+  // Remove the user document
   await user.deleteOne()
 
-  // Clear the auth cookie
+  // Clear the HttpOnly cookie — match the sameSite/secure settings used
+  // at login so the browser actually removes it in all environments.
+  const isProduction = process.env.NODE_ENV === 'production'
   res.cookie('token', '', {
     httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? 'none' : 'lax',
     expires: new Date(0),
   })
 

@@ -1,8 +1,11 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import AppLayout from '../components/AppLayout'
 import Modal from '../components/Modal'
 import Button from '../components/Button'
 import { Moon, Sun, Bell, Trash } from '../icons'
+import { deleteAccount } from '../services/api'
+import { clearAuthStorage } from '../utils/auth'
 
 function Toggle({ enabled, onToggle }) {
   return (
@@ -22,10 +25,53 @@ function Toggle({ enabled, onToggle }) {
 }
 
 function Settings() {
-  const [darkMode, setDarkMode] = useState(false)
+  const navigate = useNavigate()
+
+  const [darkMode,    setDarkMode]    = useState(false)
   const [emailNotifs, setEmailNotifs] = useState(true)
-  const [pushNotifs, setPushNotifs] = useState(false)
+  const [pushNotifs,  setPushNotifs]  = useState(false)
   const [deleteModal, setDeleteModal] = useState(false)
+
+  // Delete-account flow state
+  const [deleting,   setDeleting]   = useState(false)
+  const [deleteError, setDeleteError] = useState('')
+
+  // -------------------------------------------------------------------------
+  // Handle confirmed account deletion
+  // -------------------------------------------------------------------------
+  const handleDeleteAccount = async () => {
+    setDeleting(true)
+    setDeleteError('')
+    try {
+      await deleteAccount()
+
+      // Clear all client-side auth state
+      clearAuthStorage()
+
+      // Close the modal before navigating so it doesn't linger
+      setDeleteModal(false)
+
+      // Redirect to landing page with a success message passed via state
+      navigate('/', {
+        replace: true,
+        state: { accountDeleted: true, message: 'Your account has been deleted successfully.' },
+      })
+    } catch (err) {
+      setDeleteError(
+        err.response?.data?.message ||
+        'Could not delete your account. Please try again.'
+      )
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  // Reset error when the dialog is closed without confirming
+  const handleCloseModal = () => {
+    if (deleting) return          // don't allow closing while the request is in flight
+    setDeleteError('')
+    setDeleteModal(false)
+  }
 
   const sections = [
     {
@@ -93,7 +139,7 @@ function Settings() {
           </div>
         ))}
 
-        {/* Account */}
+        {/* Account — Danger Zone */}
         <div className="rounded-2xl bg-white border border-[#e4e2e1] shadow-sm overflow-hidden">
           <div className="px-5 py-3 border-b border-[#f0eded] bg-[#f6f3f2]">
             <h3 className="text-xs font-semibold text-[#857372] uppercase tracking-wider">Account</h3>
@@ -117,20 +163,42 @@ function Settings() {
         </div>
       </div>
 
+      {/* Delete Account confirmation dialog */}
       <Modal
         open={deleteModal}
-        onClose={() => setDeleteModal(false)}
+        onClose={handleCloseModal}
         title="Delete Account"
         footer={
           <>
-            <Button variant="outline" size="sm" onClick={() => setDeleteModal(false)}>Cancel</Button>
-            <Button variant="danger" size="sm" onClick={() => setDeleteModal(false)}>Delete Permanently</Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleCloseModal}
+              disabled={deleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={handleDeleteAccount}
+              disabled={deleting}
+            >
+              {deleting ? 'Deleting…' : 'Delete Permanently'}
+            </Button>
           </>
         }
       >
         <p className="text-sm text-[#524343]">
           Are you absolutely sure? This will permanently delete your account, all notes, and summary history. This action cannot be undone.
         </p>
+
+        {/* Backend error — shown inside the dialog so the user sees it in context */}
+        {deleteError && (
+          <p className="mt-3 rounded-lg border border-[#ffdad6] bg-[#fff5f5] px-3 py-2 text-xs text-[#93000a]">
+            {deleteError}
+          </p>
+        )}
       </Modal>
     </AppLayout>
   )

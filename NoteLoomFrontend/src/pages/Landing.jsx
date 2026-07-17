@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import Navbar from '../components/Navbar'
 import Footer from '../components/Footer'
 import Button from '../components/Button'
@@ -73,9 +73,19 @@ const pricing = [
 ]
 
 function Landing() {
+  const location = useLocation()
+  const deletedMessage = location.state?.accountDeleted ? location.state.message : null
+
   return (
     <div className="min-h-screen bg-[#fbf9f8] flex flex-col">
       <Navbar />
+
+      {/* Account-deleted success banner — shown only when redirected from Settings */}
+      {deletedMessage && (
+        <div className="bg-[#e6f4ea] border-b border-[#b7dfbe] px-4 py-3 text-center text-sm font-medium text-[#1e6b35]">
+          {deletedMessage}
+        </div>
+      )}
 
       <main className="flex-1">
         {/* Hero */}
