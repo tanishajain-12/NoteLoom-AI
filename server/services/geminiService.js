@@ -24,41 +24,45 @@ const FALLBACK_MODELS = [
 ].filter((m) => m !== PRIMARY_MODEL) // don't retry the model that already failed
 
 // Exponential backoff delays in ms: 2s, 4s, 8s, 16s
-const BACKOFF_MS = [2000, 4000, 8000, 16000]
+const BACKOFF_MS = [1000, 2000]
 
 // ---------------------------------------------------------------------------
-// JSON schema Gemini must follow
+// cleanTranscript
+//
+// Normalises whitespace before the transcript is sent to Gemini.
+// This reduces token count without altering meaning or punctuation.
+//
+// Rules applied (in order):
+//   1. Trim leading/trailing whitespace.
+//   2. Collapse runs of 2+ blank lines into a single newline.
+//   3. Collapse runs of 2+ spaces (on the same line) into one space.
+//
+// The original transcript is NOT modified here — the caller stores the raw
+// value in MongoDB and only passes the cleaned version to buildPrompt.
+//
+// @param {string} text — raw transcript as submitted by the user
+// @returns {string}    — whitespace-normalised transcript
 // ---------------------------------------------------------------------------
-const RESPONSE_SCHEMA = `{
-  "summary": "<2-4 sentence paragraph>",
-  "keyPoints": ["<point>", "..."],
-  "actionItems": ["<task>", "..."],
-  "quizQuestions": [
-    { "question": "<question text>", "answer": "<answer text>" }
-  ]
-}`
+const cleanTranscript = (text) =>
+  text
+    .trim()
+    .replace(/\n{3,}/g, '\n\n')   // 3+ consecutive newlines → 2 (one blank line)
+    .replace(/\n\n+/g, '\n')      // 2 consecutive newlines → 1
+    .replace(/[ \t]{2,}/g, ' ')   // 2+ spaces/tabs on a line → single space
 
 // ---------------------------------------------------------------------------
 // Prompt builder
 // ---------------------------------------------------------------------------
 const buildPrompt = (transcript) => `
-You are an expert note-taking assistant.
-Analyse the following lecture or meeting transcript and respond with ONLY valid JSON.
-Do NOT include markdown code fences, backticks, or any text outside the JSON object.
+Analyse this transcript. Reply with ONLY a raw JSON object — no markdown, no code fences, no extra text.
 
-Required JSON shape:
-${RESPONSE_SCHEMA}
+Required shape:
+{"summary":"2-4 sentence paragraph","keyPoints":["4-8 concise points"],"actionItems":["tasks/follow-ups; empty array if none"],"quizQuestions":[{"question":"...","answer":"..."}]}
 
-Rules:
-- "summary"       : 2–4 sentence paragraph covering the main topic.
-- "keyPoints"     : 4–8 bullet points, each a single concise sentence.
-- "actionItems"   : concrete tasks or follow-ups mentioned; empty array if none.
-- "quizQuestions" : 3–5 question/answer pairs that test understanding.
+Rules: summary=2-4 sentences; keyPoints=4-8 items; actionItems=[] if none; quizQuestions=3-5 pairs.
 
 Transcript:
-"""
 ${transcript}
-"""
 `.trim()
 
 // ---------------------------------------------------------------------------
@@ -95,8 +99,21 @@ const callModel = async (modelName, prompt) => {
         `HTTP ${status ?? 'unknown'}: ${err.message}`
       )
 
-      // Only retry on transient overload errors
-      const isRetriable = status === 503 || status === 429
+      // 429 = quota exceeded — retrying is pointless and just wastes time.
+      // Fail immediately with a friendly message.
+      if (status === 429) {
+        console.error(
+          `[geminiService] model="${modelName}" quota exceeded (HTTP 429) — not retrying`
+        )
+        const quotaError = new Error(
+          'The AI service has reached its daily request limit. Please try again later.'
+        )
+        quotaError.status = 429
+        throw quotaError
+      }
+
+      // Only retry on transient server overload (503)
+      const isRetriable = status === 503 || status === 500
       if (isRetriable && attempt < BACKOFF_MS.length) {
         const wait = BACKOFF_MS[attempt]
         console.warn(
@@ -172,7 +189,7 @@ const summariseTranscript = async (transcript) => {
     throw new Error('GEMINI_API_KEY is not set in environment variables')
   }
 
-  const prompt = buildPrompt(transcript)
+  const prompt = buildPrompt(cleanTranscript(transcript))
   const modelsToTry = [PRIMARY_MODEL, ...FALLBACK_MODELS]
 
   console.log(`[geminiService] Starting summarisation — primary model: "${PRIMARY_MODEL}"`)
@@ -196,11 +213,13 @@ const summariseTranscript = async (transcript) => {
         `HTTP ${status ?? 'unknown'}: ${err.message}`
       )
 
-      // Only fall through to the next model for overload errors
-      const isOverload = status === 503 || status === 429
+      // Only fall through to the next model for transient server overload (503).
+      // 429 means the API key quota is exhausted — trying another model string
+      // won't help because they all share the same key.
+      const isOverload = status === 503 || status === 500
       if (!isOverload) {
         console.error('[geminiService] Non-retriable error — stopping fallback chain')
-        throw new Error(`Gemini API error (${modelName}): ${err.message}`)
+        throw err   // preserve the original error (including the friendly 429 message)
       }
 
       console.warn(`[geminiService] Falling back to next model in chain...`)
