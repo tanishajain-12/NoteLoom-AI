@@ -7,6 +7,7 @@ import HistoryCard from '../components/HistoryCard'
 import { useLogout } from '../hooks/useLogout'
 import { getUserProfile, updateUserProfile, getStats, getHistory, getHistoryById } from '../services/api'
 import { updateStoredUser } from '../utils/auth'
+import { addNotification } from '../utils/notifications'
 import { useNavigate } from 'react-router-dom'
 import { Logout, DocumentText, Clock, ChartBar, BookOpen } from '../icons'
 
@@ -83,10 +84,9 @@ function Profile() {
   // -------------------------------------------------------------------------
   const handleNameSave = async (newName) => {
     const updated = await updateUserProfile({ name: newName })
-    // Update local state so the card re-renders immediately
     setUser(updated)
-    // Keep localStorage in sync so AppLayout initials update too
     updateStoredUser({ name: updated.name })
+    addNotification('Profile updated successfully')
   }
 
   // -------------------------------------------------------------------------

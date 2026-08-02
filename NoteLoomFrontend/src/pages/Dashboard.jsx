@@ -6,6 +6,7 @@ import Textarea from '../components/Textarea'
 import HistoryCard from '../components/HistoryCard'
 import { summarizeTranscript, getHistory, getStats } from '../services/api'
 import { getStoredUser } from '../utils/auth'
+import { addNotification } from '../utils/notifications'
 import { Sparkles, DocumentText, Clock, ChartBar, BookOpen, ArrowRight } from '../icons'
 
 const iconMap = {
@@ -91,6 +92,7 @@ function Dashboard() {
 
     try {
       const result = await summarizeTranscript(transcript.trim())
+      addNotification('Summary generated successfully')
       navigate('/results', { state: { summary: result } })
     } catch (err) {
       const message =

@@ -59,7 +59,7 @@ Analyse this transcript. Reply with ONLY a raw JSON object — no markdown, no c
 Required shape:
 {"summary":"2-4 sentence paragraph","keyPoints":["4-8 concise points"],"actionItems":["tasks/follow-ups; empty array if none"],"quizQuestions":[{"question":"...","answer":"..."}]}
 
-Rules: summary=2-4 sentences; keyPoints=4-8 items; actionItems=[] if none; quizQuestions=3-5 pairs.
+Rules: summary=2-4 sentences; keyPoints=4-8 items; actionItems=[] if none; quizQuestions=5-8 pairs.
 
 Transcript:
 ${transcript}

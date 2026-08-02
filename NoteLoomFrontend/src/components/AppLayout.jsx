@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import Sidebar from './Sidebar'
-import { Menu, Bell, Profile as ProfileIcon } from '../icons'
+import NotificationDropdown from './NotificationDropdown'
+import { Menu } from '../icons'
 
 // Derive up-to-2-letter initials from the stored user's name.
 // Falls back to '?' if localStorage is unavailable or the user is not logged in.
@@ -43,10 +44,7 @@ function AppLayout({ children, title }) {
           </div>
 
           <div className="flex items-center gap-2">
-            <button className="relative p-2 rounded-lg hover:bg-[#f0eded]">
-              <Bell className="w-5 h-5 text-[#524343]" />
-              <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-[#8a4d4e]"></span>
-            </button>
+            <NotificationDropdown />
             <Link to="/profile" className="flex h-9 w-9 items-center justify-center rounded-full bg-[#8a4d4e] text-white text-sm font-bold">
               {initials}
             </Link>
