@@ -90,3 +90,9 @@ export const getHistory = () =>
 // GET /api/history/:id
 export const getHistoryById = (id) =>
   api.get(`/history/${id}`).then((res) => res.data)
+
+// PATCH /api/history/:id/quiz-result — save or overwrite quiz attempt result
+// Body: { score, totalQuestions, percentage, correctAnswers, incorrectAnswers }
+// Returns the saved quizResult sub-document
+export const saveQuizResult = (noteId, result) =>
+  api.patch(`/history/${noteId}/quiz-result`, result).then((res) => res.data)

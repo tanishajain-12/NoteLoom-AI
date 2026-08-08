@@ -1,7 +1,7 @@
 const express = require('express')
 const router = express.Router()
 
-const { summarize, getHistory, getHistoryById, getStats } = require('../controllers/noteController')
+const { summarize, getHistory, getHistoryById, getStats, saveQuizResult } = require('../controllers/noteController')
 const { protect } = require('../middleware/authMiddleware')
 
 // All note routes are now private — every request must carry a valid JWT.
@@ -19,5 +19,8 @@ router.get('/history', protect, getHistory)
 
 // GET  /api/history/:id — get one full summary (must belong to the user)
 router.get('/history/:id', protect, getHistoryById)
+
+// PATCH /api/history/:id/quiz-result — save or update the quiz attempt result
+router.patch('/history/:id/quiz-result', protect, saveQuizResult)
 
 module.exports = router

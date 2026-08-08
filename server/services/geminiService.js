@@ -57,9 +57,14 @@ const buildPrompt = (transcript) => `
 Analyse this transcript. Reply with ONLY a raw JSON object — no markdown, no code fences, no extra text.
 
 Required shape:
-{"summary":"2-4 sentence paragraph","keyPoints":["4-8 concise points"],"actionItems":["tasks/follow-ups; empty array if none"],"quizQuestions":[{"question":"...","answer":"..."}]}
+{"summary":"2-4 sentence paragraph","keyPoints":["4-8 concise points"],"actionItems":["tasks/follow-ups; empty array if none"],"quizQuestions":[{"question":"...","options":["Option A","Option B","Option C","Option D"],"correctAnswer":"One of the four options"}],"flashcards":[{"question":"...","answer":"..."}]}
 
-Rules: summary=2-4 sentences; keyPoints=4-8 items; actionItems=[] if none; quizQuestions=5-8 pairs.
+Rules:
+- summary=2-4 sentences
+- keyPoints=4-8 items
+- actionItems=[] if none
+- quizQuestions=5-8 multiple-choice questions; each must have exactly 4 options; correctAnswer must be one of those 4 options verbatim; the other 3 options must be plausible distractors; test conceptual understanding, not word matching; no duplicate questions
+- flashcards=5-8 pairs covering the most important concepts; each card must have a short, focused question and a concise answer suitable for spaced-repetition study
 
 Transcript:
 ${transcript}
@@ -158,18 +163,53 @@ const parseAndValidate = (rawText) => {
     )
   }
 
-  const required = ['summary', 'keyPoints', 'actionItems', 'quizQuestions']
+  const required = ['summary', 'keyPoints', 'actionItems', 'quizQuestions', 'flashcards']
   for (const key of required) {
     if (!(key in parsed)) {
       throw new Error(`Gemini response is missing required field: "${key}"`)
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Validate and normalise quizQuestions
+  //
+  // Each item must be:  { question: string, options: string[4], correctAnswer: string }
+  // where correctAnswer is one of the four options verbatim.
+  //
+  // Items that fail validation are dropped rather than throwing so that a
+  // partially valid response still saves the remaining fields.
+  // ---------------------------------------------------------------------------
+  const rawQuiz = Array.isArray(parsed.quizQuestions) ? parsed.quizQuestions : []
+  const validatedQuiz = rawQuiz.filter((q, idx) => {
+    if (typeof q?.question !== 'string' || !q.question.trim()) {
+      console.warn(`[geminiService] quizQuestions[${idx}]: missing "question" — dropping`)
+      return false
+    }
+    if (!Array.isArray(q.options) || q.options.length !== 4 ||
+        !q.options.every((o) => typeof o === 'string' && o.trim())) {
+      console.warn(`[geminiService] quizQuestions[${idx}]: "options" must be array of 4 strings — dropping`)
+      return false
+    }
+    if (typeof q?.correctAnswer !== 'string' || !q.options.includes(q.correctAnswer)) {
+      console.warn(`[geminiService] quizQuestions[${idx}]: "correctAnswer" not found in "options" — dropping`)
+      return false
+    }
+    return true
+  })
+
+  // Validate flashcards array length (5–8 items expected)
+  if (!Array.isArray(parsed.flashcards) || parsed.flashcards.length < 1) {
+    // Treat a missing or empty array as a soft failure — fall back to empty
+    // rather than throwing, so a partial response still saves the other fields.
+    parsed.flashcards = []
+  }
+
   return {
-    summary:       parsed.summary       ?? '',
-    keyPoints:     parsed.keyPoints     ?? [],
-    actionItems:   parsed.actionItems   ?? [],
-    quizQuestions: parsed.quizQuestions ?? [],
+    summary:       parsed.summary    ?? '',
+    keyPoints:     Array.isArray(parsed.keyPoints)    ? parsed.keyPoints    : [],
+    actionItems:   Array.isArray(parsed.actionItems)  ? parsed.actionItems  : [],
+    quizQuestions: validatedQuiz,
+    flashcards:    parsed.flashcards ?? [],
   }
 }
 

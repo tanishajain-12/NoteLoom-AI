@@ -62,12 +62,13 @@ try {
 
   // Associate the note with the authenticated user
   const note = await Note.create({
-    user:          req.user._id,          // <-- scoped to this user
+    user:          req.user._id,
     transcript:    transcript.trim(),
     summary:       aiResult.summary,
     keyPoints:     aiResult.keyPoints,
     actionItems:   aiResult.actionItems,
     quizQuestions: aiResult.quizQuestions,
+    flashcards:    aiResult.flashcards,
   })
 
   res.status(201).json(note)
@@ -147,4 +148,51 @@ const getStats = asyncHandler(async (req, res) => {
   })
 })
 
-module.exports = { summarize, getHistory, getHistoryById, getStats }
+// ---------------------------------------------------------------------------
+// @desc    Save or overwrite the quiz result for a note
+// @route   PATCH /api/history/:id/quiz-result
+// @access  Private (note must belong to req.user)
+//
+// Body: { score, totalQuestions, percentage, correctAnswers, incorrectAnswers }
+//
+// Uses $set so only the quizResult sub-document is touched — all other note
+// fields (summary, keyPoints, quizQuestions, flashcards, etc.) are preserved.
+// ---------------------------------------------------------------------------
+const saveQuizResult = asyncHandler(async (req, res) => {
+  const { score, totalQuestions, percentage, correctAnswers, incorrectAnswers } = req.body
+
+  // Basic validation
+  const fields = { score, totalQuestions, percentage, correctAnswers, incorrectAnswers }
+  for (const [key, val] of Object.entries(fields)) {
+    if (typeof val !== 'number' || isNaN(val)) {
+      res.status(422)
+      throw new Error(`"${key}" must be a number`)
+    }
+  }
+
+  const note = await Note.findOneAndUpdate(
+    { _id: req.params.id, user: req.user._id },   // ownership check in the query
+    {
+      $set: {
+        quizResult: {
+          score,
+          totalQuestions,
+          percentage,
+          correctAnswers,
+          incorrectAnswers,
+          completedAt: new Date(),
+        },
+      },
+    },
+    { new: true, runValidators: true }             // return updated doc
+  )
+
+  if (!note) {
+    res.status(404)
+    throw new Error('Note not found')
+  }
+
+  res.status(200).json(note.quizResult)
+})
+
+module.exports = { summarize, getHistory, getHistoryById, getStats, saveQuizResult }

@@ -252,11 +252,11 @@ export function exportInsightsPDF(data) {
       doc.setTextColor(...BRAND)
       doc.text('Answer:', MARGIN + 4, y)
 
-      // Answer text
+      // Answer text — use correctAnswer (current schema); q.answer is undefined
       doc.setFont('helvetica', 'normal')
       doc.setFontSize(10)
       doc.setTextColor(...MUTED)
-      y = writeWrapped(doc, q.answer, MARGIN + 20, y, COL_W - 20, LINE_H, PAGE_BOTTOM)
+      y = writeWrapped(doc, q.correctAnswer, MARGIN + 20, y, COL_W - 20, LINE_H, PAGE_BOTTOM)
       y += 5
 
       // Thin separator between Q&A blocks (skip after last)

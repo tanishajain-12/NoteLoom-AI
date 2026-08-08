@@ -2,7 +2,9 @@ import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import AppLayout from '../components/AppLayout'
 import Button from '../components/Button'
-import { Copy, Download, ChevronDown, Check, BookOpen, LightBulb, Question } from '../icons'
+import FlashcardDeck from '../components/FlashcardDeck'
+import MultipleChoiceQuiz from '../components/MultipleChoiceQuiz'
+import { Copy, Download, Check, BookOpen, LightBulb, Question } from '../icons'
 import { exportInsightsPDF } from '../utils/exportPdf'
 
 // ---------------------------------------------------------------------------
@@ -27,46 +29,6 @@ function CopyButton({ text }) {
       {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
       {copied ? 'Copied!' : 'Copy'}
     </button>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// QuizItem — backend returns { question, answer } with no options array.
-// Renders as an accordion: click to expand, then "Reveal Answer" button.
-// Visual style (rounded card, chevron, colours) is preserved exactly.
-// ---------------------------------------------------------------------------
-function QuizItem({ q, index }) {
-  const [open, setOpen] = useState(false)
-  const [revealed, setRevealed] = useState(false)
-
-  return (
-    <div className="rounded-xl bg-[#f6f3f2] border border-[#e4e2e1]/60 overflow-hidden">
-      {/* Question header — click to expand */}
-      <button
-        onClick={() => setOpen(!open)}
-        className="flex w-full items-center justify-between p-4 text-left text-xs font-semibold text-[#1b1c1c] uppercase tracking-wide"
-      >
-        <span>Q{index + 1}: {q.question}</span>
-        <ChevronDown className={`w-5 h-5 text-[#857372] transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
-
-      {open && (
-        <div className="px-4 pb-4">
-          {!revealed ? (
-            <button
-              onClick={() => setRevealed(true)}
-              className="w-full rounded-xl border border-[#d7c2c1] px-4 py-2.5 text-sm text-[#524343] hover:bg-white transition-colors text-left"
-            >
-              Tap to reveal answer
-            </button>
-          ) : (
-            <div className="rounded-xl bg-[#ffdad9] px-4 py-2.5 text-sm text-[#592628] font-medium leading-relaxed">
-              {q.answer}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
   )
 }
 
@@ -138,7 +100,7 @@ function Results() {
     )
   }
 
-  const { summary, keyPoints = [], actionItems = [], quizQuestions = [], createdAt } = data
+  const { summary, keyPoints = [], actionItems = [], quizQuestions = [], flashcards = [], createdAt } = data
 
   // Format the date shown in the sub-heading
   const formattedDate = createdAt
@@ -245,44 +207,43 @@ function Results() {
           </div>
         </section>
 
-        {/* Quiz — full remaining width now that the utility panel is removed */}
-        <section className="lg:col-span-12 glass-card rounded-xl p-6 shadow-sm bg-white/80 backdrop-blur-sm border border-[#e4e2e1]/50">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#e7e1e1]">
-              <Question className="w-5 h-5 text-[#615d5e]" />
-            </div>
-            <h3 className="font-display text-xl font-bold text-[#1b1c1c]">Knowledge Check</h3>
-          </div>
-          <div className="space-y-3">
-            {quizQuestions.length === 0 ? (
-              <p className="text-sm text-[#857372]">No quiz questions generated for this transcript.</p>
-            ) : (
-              quizQuestions.map((q, i) => (
-                <QuizItem key={i} q={q} index={i} />
-              ))
-            )}
-          </div>
-        </section>
-
-        {/* Flashcard panel — 4 cols */}
-        <section className="lg:col-span-4">
-          <div className="relative overflow-hidden rounded-xl bg-[#8a4d4e] p-6 shadow-lg min-h-[200px]">
-            <div className="relative z-10">
-              <h4 className="font-display text-xl font-bold text-white mb-2">Master Your Learning</h4>
-              <p className="text-sm text-white/80 mb-6 leading-relaxed">
-                Convert these insights into flashcards for your spaced repetition system.
-              </p>
-              <button className="w-full flex items-center justify-center gap-2 rounded-xl bg-white py-3 text-sm font-semibold text-[#8a4d4e] hover:bg-white/90 transition-all">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM18.75 10.5h.008v.008h-.008V10.5Z" />
+        {/* Flashcards — full width, shown only when cards exist */}
+        {flashcards.length > 0 && (
+          <section className="lg:col-span-12 glass-card rounded-xl p-6 shadow-sm bg-white/80 backdrop-blur-sm border border-[#e4e2e1]/50">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#ffdad9]">
+                {/* Card-stack icon */}
+                <svg className="w-5 h-5 text-[#8a4d4e]" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3" />
                 </svg>
-                Create Flashcards
-              </button>
+              </div>
+              <div>
+                <h3 className="font-display text-xl font-bold text-[#1b1c1c]">Flashcards</h3>
+                <p className="text-xs text-[#857372] mt-0.5">{flashcards.length} cards · click a card to flip it</p>
+              </div>
             </div>
-            <div className="absolute -right-10 -bottom-10 h-40 w-40 rounded-full bg-white/10 blur-3xl pointer-events-none"></div>
-          </div>
-        </section>
+            {/* Constrain the deck width on wide screens for comfortable reading */}
+            <div className="max-w-xl mx-auto">
+              <FlashcardDeck cards={flashcards} />
+            </div>
+          </section>
+        )}
+
+        {/* Quiz — full width, hidden when no questions */}
+        {quizQuestions.length > 0 && (
+          <section className="lg:col-span-12 glass-card rounded-xl p-6 shadow-sm bg-white/80 backdrop-blur-sm border border-[#e4e2e1]/50">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#e7e1e1]">
+                <Question className="w-5 h-5 text-[#615d5e]" />
+              </div>
+              <div>
+                <h3 className="font-display text-xl font-bold text-[#1b1c1c]">Knowledge Check</h3>
+                <p className="text-xs text-[#857372] mt-0.5">{quizQuestions.length} multiple-choice questions</p>
+              </div>
+            </div>
+            <MultipleChoiceQuiz questions={quizQuestions} />
+          </section>
+        )}
       </div>
 
       {/* Bottom export bar */}
