@@ -156,7 +156,7 @@ function Results() {
               </div>
               <h3 className="font-display text-xl font-bold text-[#1b1c1c]">Key Points</h3>
             </div>
-            <button className="text-xs font-semibold text-[#8a4d4e] hover:underline flex items-center gap-1">
+            <button className="text-xs font-semibold text-[#8a4d4e] hover:underline flex items-center gap-1" onClick={() => exportInsightsPDF(data)}>
               <Download className="w-3.5 h-3.5" />
               Download PDF
             </button>
@@ -259,6 +259,8 @@ function Results() {
             <Download className="w-4 h-4" />
             Export Insights
           </Button>
+
+          
         </div>
         {/* Clipboard fallback feedback — only shown when Web Share API is unavailable */}
         {shareFeedback && (
